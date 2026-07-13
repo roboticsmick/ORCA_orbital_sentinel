@@ -1,0 +1,15 @@
+[Unit]
+Description=ORCA Orbital Sentinel idle screensaver watcher
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# Uncomment and adjust to override the default 880000 ms idle threshold:
+# Environment=ORCA_IDLE_MS=880000
+ExecStart=/media/logic/USamsung/ORCA_orbital_sentinel/screensaver/orca-screensaver-watch.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
