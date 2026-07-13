@@ -23,32 +23,66 @@ from .propagate import EARTH_RADIUS_KM
 class Renderer:
     """! @brief Owns the window, surfaces, fonts, and all drawing."""
 
-    def __init__(self, logical_w, logical_h, fullscreen=False):
+    def __init__(self, fullscreen=False):
         """! @brief Create the window and cached surfaces/fonts.
-            @param logical_w Logical (pre-upscale) width in pixels.
-            @param logical_h Logical (pre-upscale) height in pixels.
-            @param fullscreen Present at native display resolution (SDL scales
-                   the fixed WINDOW_W/H surface up to fit, so HUD/scanline
-                   layout math elsewhere is unaffected).
+            @param fullscreen Present at the monitor's native resolution.
+        @details The renderer owns its own size, and exposes the logical (pre-upscale)
+                 scene size as `lw`/`lh` so the caller can build a matching camera.
+
+                 Fullscreen deliberately does NOT use pygame.SCALED. SCALED would
+                 letterbox the fixed WINDOW_W x WINDOW_H surface to preserve its
+                 aspect ratio, and SDL fills those bars with pure black (0,0,0) -
+                 which does not match COL_BACKGROUND (a near-black green), so they
+                 show up as mismatched columns down the sides. Taking the native
+                 resolution and sizing the scene to it means there are no bars at all.
         """
         pygame.init()
         pygame.display.set_caption("ORCA ORBITAL SENTINEL")
-        flags = (pygame.FULLSCREEN | pygame.SCALED) if fullscreen else 0
-        self.window = pygame.display.set_mode(
-            (config.WINDOW_W, config.WINDOW_H), flags)
-        self.lw, self.lh = logical_w, logical_h
-        self.scene = pygame.Surface((logical_w, logical_h))
+
+        if fullscreen:
+            sizes = pygame.display.get_desktop_sizes()
+            size = sizes[0] if sizes else (config.WINDOW_W, config.WINDOW_H)
+            self.window = pygame.display.set_mode(size, pygame.FULLSCREEN)
+        else:
+            self.window = pygame.display.set_mode(
+                (config.WINDOW_W, config.WINDOW_H))
+
+        # Trust the surface, not what we asked for: a window manager may hand back
+        # something slightly different.
+        self.win_w, self.win_h = self.window.get_size()
+        self.lw = max(1, self.win_w // config.LOGICAL_SCALE)
+        self.lh = max(1, self.win_h // config.LOGICAL_SCALE)
+
+        # HUD text and its anchors are authored against WINDOW_H and scaled from
+        # there. Without this, going fullscreen on a big monitor would leave the
+        # chrome at its windowed pixel size - a postage-stamp HUD on a 4K screen -
+        # because, unlike pygame.SCALED, presenting at the native resolution does not
+        # magnify anything for us.
+        self.ui = self.win_h / float(config.WINDOW_H)
+
+        self.scene = pygame.Surface((self.lw, self.lh))
         self.scanlines = self._build_scanlines()
         self.stars = self._build_stars()
-        self.font = pygame.font.SysFont("dejavusansmono,monospace", 15)
-        self.font_sm = pygame.font.SysFont("dejavusansmono,monospace", 12)
-        self.font_lg = pygame.font.SysFont("dejavusansmono,monospace", 22, bold=True)
+        self.font = pygame.font.SysFont(
+            "dejavusansmono,monospace", self._s(15))
+        self.font_sm = pygame.font.SysFont(
+            "dejavusansmono,monospace", self._s(12))
+        self.font_lg = pygame.font.SysFont(
+            "dejavusansmono,monospace", self._s(22), bold=True)
+        self.font_clock = pygame.font.SysFont(
+            "dejavusansmono,monospace", self._s(config.CLOCK_FONT_PX), bold=True)
+        self.font_date = pygame.font.SysFont(
+            "dejavusansmono,monospace", self._s(config.DATE_FONT_PX))
+
+    def _s(self, value):
+        """! @brief Scale a HUD length authored at WINDOW_H to the real display."""
+        return max(1, int(round(value * self.ui)))
 
     def _build_scanlines(self):
         """! @brief Pre-render a translucent horizontal-line overlay (window size)."""
-        layer = pygame.Surface((config.WINDOW_W, config.WINDOW_H), pygame.SRCALPHA)
-        for y in range(0, config.WINDOW_H, 3):        # Bounded by window height.
-            pygame.draw.line(layer, (0, 0, 0, 70), (0, y), (config.WINDOW_W, y))
+        layer = pygame.Surface((self.win_w, self.win_h), pygame.SRCALPHA)
+        for y in range(0, self.win_h, 3):             # Bounded by window height.
+            pygame.draw.line(layer, (0, 0, 0, 70), (0, y), (self.win_w, y))
         return layer
 
     def _build_stars(self):
@@ -60,19 +94,29 @@ class Renderer:
         return np.stack((xs, ys), axis=1)
 
     def _to_window(self, lx, ly):
-        """! @brief Scale a logical coordinate to window space."""
-        return int(lx * config.LOGICAL_SCALE), int(ly * config.LOGICAL_SCALE)
+        """! @brief Scale a logical coordinate to window space.
+        @details Derived from the real surface size rather than LOGICAL_SCALE, because
+                 integer division above means the scene may not tile the window exactly
+                 (e.g. a 1080-px-high screen at scale 2 gives a 540-px scene, but an
+                 odd height would not).
+        """
+        return (int(lx * self.win_w / self.lw),
+                int(ly * self.win_h / self.lh))
 
     def draw_frame(self, camera, coast_pts, sat_pts, station_rows,
-                   neo_rows, hud):
+                   neo_rows, hud, home_ecef=None, home_pulse=0.0):
         """! @brief Render one complete frame to the window.
             @param camera Camera projecting ECEF km -> logical pixels.
             @param coast_pts (N,3) coastline ECEF array (km).
             @param sat_pts (M,3) satellite ECEF array (km).
             @param station_rows List of (row_index, label, color) for crewed
-                   stations to draw as labelled crosses.
+                   stations to draw as labelled satellites.
             @param neo_rows Iterable of NeoRow for the Sentry panel.
-            @param hud Dict of HUD fields (clock, counts, source, bands).
+            @param hud Dict of HUD fields (clock, counts, source, bands, and the
+                   local_time / local_date strings for the big readout).
+            @param home_ecef Length-3 ECEF vector for the viewer's location, or
+                   None to omit the home marker.
+            @param home_pulse Ping animation phase in [0, 1).
         """
         self.scene.fill(config.COL_BACKGROUND)
         r_earth_px = camera.earth_radius_px(EARTH_RADIUS_KM)
@@ -81,12 +125,14 @@ class Renderer:
         self._draw_limb(r_earth_px)
         self._draw_cloud(coast_pts, camera, r_earth_px,
                          config.COL_COAST, config.COL_COAST_FAR, size=1)
+        self._draw_home(camera, home_ecef, home_pulse)
         drawn_stations = self._draw_satellites(sat_pts, camera, r_earth_px,
                                                station_rows)
 
         # Upscale the chunky scene, then composite crisp overlays.
         pygame.transform.scale(self.scene, self.window.get_size(), self.window)
         self._draw_globe_labels(drawn_stations)
+        self._draw_clock(hud)
         self._draw_hud(hud, neo_rows)
         self.window.blit(self.scanlines, (0, 0))
         pygame.display.flip()
@@ -119,7 +165,7 @@ class Renderer:
             self._dot(px[i], py[i], col, size)
 
     def _draw_satellites(self, pts, camera, r_earth_px, station_rows):
-        """! @brief Plot satellites with globe occlusion; cross-mark stations.
+        """! @brief Plot satellites with globe occlusion; icon-mark crewed stations.
             @param station_rows List of (row_index, label, color).
             @return Dict row_index -> (label, color, window_xy) for visible stations.
         """
@@ -136,18 +182,48 @@ class Renderer:
             if i in station_map:
                 label, col = station_map[i]
                 if not occluded:
-                    self._cross(px[i], py[i], col, config.STATION_CROSS_ARM)
+                    self._satellite(px[i], py[i], col)
                     drawn[i] = (label, col, self._to_window(px[i], py[i]))
                 continue
             col = config.COL_SAT_FAR if occluded else config.COL_SAT
             self._dot(px[i], py[i], col, 1)
         return drawn
 
-    def _cross(self, lx, ly, col, arm):
-        """! @brief Draw a small plus-shaped marker on the scene surface."""
+    def _satellite(self, lx, ly, col):
+        """! @brief Draw a satellite: a body with two solar panels on booms.
+        @details Eleven logical pixels wide, so it reads as a spacecraft rather
+                 than a dot, and matches the ESP32 build's marker exactly:
+
+                     ##   ###   ##
+                     ##  #####  ##
+                     ##   ###   ##
+        """
         x, y = int(lx), int(ly)
-        pygame.draw.line(self.scene, col, (x - arm, y), (x + arm, y))
-        pygame.draw.line(self.scene, col, (x, y - arm), (x, y + arm))
+        self.scene.fill(col, (x - 1, y - 1, 3, 3))    # Body.
+        self.scene.fill(col, (x - 2, y, 1, 1))        # Booms out to each panel.
+        self.scene.fill(col, (x + 2, y, 1, 1))
+        self.scene.fill(col, (x - 5, y - 2, 2, 5))    # Left solar panel.
+        self.scene.fill(col, (x + 4, y - 2, 2, 5))    # Right solar panel.
+
+    def _draw_home(self, camera, home_ecef, pulse):
+        """! @brief Draw the home marker (a dot) and its ping while it faces the viewer.
+            @param home_ecef Length-3 ECEF vector (km), or None.
+            @param pulse Ping phase in [0, 1).
+        @details The home point sits ON the sphere, so "visible" is simply the near
+                 hemisphere - no disk-occlusion test is needed.
+
+                 Just a dot: the expanding ring is what draws the eye and what tells
+                 it apart from a satellite. The ring starts tight on the dot and grows
+                 outward, which is what makes it read as a ping rather than a throb.
+        """
+        if home_ecef is None:
+            return
+        px, py, depth = camera.project(home_ecef)
+        if depth < 0:
+            return
+        pygame.draw.circle(self.scene, config.COL_HOME_PING,
+                           (int(px), int(py)), int(3 + pulse * 9.0), 1)
+        self.scene.fill(config.COL_HOME, (int(px) - 1, int(py) - 1, 3, 3))
 
     def _dot(self, lx, ly, col, size):
         """! @brief Draw a small filled dot on the scene, clipped to bounds."""
@@ -160,18 +236,47 @@ class Renderer:
             self.scene.fill(col, (x, y, size, size))
 
     def _draw_globe_labels(self, drawn_stations):
-        """! @brief Draw a tag beside each visible station cross.
+        """! @brief Draw a tag beside each visible station icon.
             @param drawn_stations Dict row_index -> (label, color, window_xy).
+        @details Offset clear of the 11-px satellite body so the label never sits on
+                 the solar panels.
         """
+        # 7 logical px clears the satellite body; convert with the real upscale
+        # factor rather than LOGICAL_SCALE, which may not divide the display evenly.
+        offset = int(7 * self.win_w / self.lw)
         for _idx, (label, col, win) in drawn_stations.items():
-            self._text(label[:16], (win[0] + 6, win[1] - 6),
+            self._text(label[:16], (win[0] + offset, win[1] - self._s(6)),
                        self.font_sm, col)
+
+    def _draw_clock(self, hud):
+        """! @brief Draw the big local time and date, centred above the globe.
+        @details Always REAL wall-clock time in the local timezone, even when
+                 TIME_ACCELERATION is running the orbits fast: a clock that lies is
+                 useless. `hud["clock"]` (simulated UTC) stays in the telemetry block
+                 for anyone who wants to see what the physics is actually using.
+        """
+        if not config.CLOCK_ENABLED:
+            return
+        time_str = hud.get("local_time")
+        date_str = hud.get("local_date")
+        if not time_str:
+            return
+
+        cx = self.win_w // 2
+        surf = self.font_clock.render(time_str, True, config.COL_CLOCK)
+        self.window.blit(surf, (cx - surf.get_width() // 2, self._s(18)))
+
+        if date_str:
+            dsurf = self.font_date.render(date_str, True, config.COL_DATE)
+            self.window.blit(
+                dsurf,
+                (cx - dsurf.get_width() // 2, self._s(22) + surf.get_height()))
 
     def _draw_hud(self, hud, neo_rows):
         """! @brief Composite the title, telemetry, NEO panel, and band bar."""
-        self._text("ORCA ORBITAL SENTINEL", (14, 10),
+        self._text("ORCA ORBITAL SENTINEL", (self._s(14), self._s(10)),
                    self.font_lg, config.COL_HUD)
-        self._text("LIVE SATELLITE + NEO TRACKING", (16, 36),
+        self._text("LIVE SATELLITE + NEO TRACKING", (self._s(16), self._s(36)),
                    self.font_sm, config.COL_HUD_DIM)
 
         lines = (
@@ -180,33 +285,35 @@ class Renderer:
             "SRC   {0}".format(hud["source"]),
         )
         for i, line in enumerate(lines):              # Bounded: fixed line set.
-            self._text(line, (16, 60 + i * 18), self.font_sm, config.COL_HUD)
+            self._text(line, (self._s(16), self._s(60 + i * 18)),
+                       self.font_sm, config.COL_HUD)
 
         self._draw_neo_panel(neo_rows)
         self._draw_band_bar(hud["bands"])
 
     def _draw_neo_panel(self, neo_rows):
         """! @brief Right-aligned Sentry near-earth-object risk list."""
-        x = config.WINDOW_W - 300
-        self._text("SENTRY / NEO IMPACT RISK", (x, 10),
+        x = self.win_w - self._s(300)
+        self._text("SENTRY / NEO IMPACT RISK", (x, self._s(10)),
                    self.font_sm, config.COL_ALERT)
         header = "{0:<12}{1:>7}{2:>9}".format("DESIG", "D(km)", "P(imp)")
-        self._text(header, (x, 30), self.font_sm, config.COL_HUD_DIM)
+        self._text(header, (x, self._s(30)), self.font_sm, config.COL_HUD_DIM)
         for i, row in enumerate(neo_rows):            # Bounded by top_n.
             line = "{0:<12}{1:>7.3f}{2:>9.1e}".format(
                 row.des[:12], row.diameter_km, row.impact_prob)
-            self._text(line, (x, 48 + i * 16), self.font_sm, config.COL_HUD)
+            self._text(line, (x, self._s(48 + i * 16)),
+                       self.font_sm, config.COL_HUD)
 
     def _draw_band_bar(self, bands):
         """! @brief Bottom bar with per-altitude-band object counts.
             @param bands Mapping of band label -> count.
         """
-        y = config.WINDOW_H - 26
-        x = 16
+        y = self.win_h - self._s(26)
+        x = self._s(16)
         for label, count in bands.items():            # Bounded: fixed band set.
             chunk = "{0} {1}".format(label, count)
             self._text(chunk, (x, y), self.font_sm, config.COL_HUD)
-            x += 12 + self.font_sm.size(chunk)[0] + 18
+            x += self._s(30) + self.font_sm.size(chunk)[0]
 
     def _text(self, string, pos, font, col):
         """! @brief Blit a line of text at a window-space position."""

@@ -2,13 +2,24 @@
 @file camera.py
 @brief Orthographic camera that projects Earth-fixed points to screen pixels.
 @details
-    The camera sits at +Y looking toward the origin. A point is first spun about
-    the polar axis (visual-only azimuth) and tilted about X, then projected
-    orthographically: screen-x from world-x, screen-y from world-z, with world-y
-    acting as depth (larger y == nearer the viewer).
+    The camera sits at +Y looking toward the origin, with +Z up. A point is first
+    spun about the polar axis (visual-only azimuth) and tilted about X, then
+    projected orthographically: screen-x from world-x, screen-y from world-z, with
+    world-y acting as depth (larger y == nearer the viewer).
 
     A point on the far hemisphere whose projected radius falls inside the Earth
     disk is considered occluded, which is what gives the swarm its 3D read.
+
+    Screen-x is NEGATED world-x. For a right-handed frame viewed from +Y with +Z up,
+    screen-right is -X, not +X:
+
+        right = view_dir x up = (-Y) x (Z) = -X
+
+    Using +X here (as this file originally did) draws the Earth MIRRORED east-west -
+    longitude increases to the left, so Perth renders east of Brisbane. The coastline
+    is mirrored by exactly the same amount, so the globe still reads convincingly as
+    Earth and the flip is easy to miss; it only becomes obvious once a known location
+    is plotted on the map, which config.HOME_* now does.
 
     This module is imported, not executed directly.
 """
@@ -52,7 +63,7 @@ class Camera:
             @return Tuple (px, py, depth) where depth>0 means the near hemisphere.
         """
         p = self._rot @ ecef_km
-        px = self.cx + self.scale * p[0]
+        px = self.cx - self.scale * p[0]     # Screen right is -x; see _SCREEN_RIGHT.
         py = self.cy - self.scale * p[2]     # Screen y grows downward; invert world z.
         return px, py, float(p[1])
 
@@ -62,7 +73,7 @@ class Camera:
             @return Tuple (px[N], py[N], depth[N]) numpy arrays.
         """
         p = pts_km @ self._rot.T                 # (N,3) rotated into camera frame.
-        px = self.cx + self.scale * p[:, 0]
+        px = self.cx - self.scale * p[:, 0]
         py = self.cy - self.scale * p[:, 2]
         return px, py, p[:, 1]
 

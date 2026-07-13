@@ -28,20 +28,49 @@ COL_COAST = (0, 170, 120)        #!< Dotted continents (near side).
 COL_COAST_FAR = (0, 55, 45)      #!< Continents on the far hemisphere (dimmed for depth).
 COL_SAT = (90, 230, 255)         #!< Satellite dot (near side).
 COL_SAT_FAR = (30, 70, 90)       #!< Satellite occluded/behind globe.
-COL_ISS = (255, 190, 40)         #!< International Space Station marker.
-COL_CSS = (255, 120, 60)         #!< Tiangong / Chinese Space Station marker.
 COL_HUD = (0, 220, 150)          #!< Primary HUD text.
 COL_HUD_DIM = (0, 110, 80)       #!< Secondary HUD text.
 COL_ALERT = (255, 90, 70)        #!< Sentry / warning accents.
 COL_GRID = (0, 40, 32)           #!< Optional graticule lines.
 
+# One pale-blue "LED" shared by the clock, the date, and both crewed stations, so the
+# readout reads as a single instrument. The stations are told apart by their labels,
+# not their colour; give COL_ISS/COL_CSS distinct values to tell them apart at a
+# glance instead.
+COL_LED = (220, 240, 255)
+COL_CLOCK = COL_LED              #!< Big local-time readout above the globe.
+COL_DATE = COL_LED               #!< Date line under the clock.
+COL_ISS = COL_LED                #!< International Space Station marker.
+COL_CSS = COL_LED                #!< Tiangong / Chinese Space Station marker.
+
+# Your location: amber, so it never reads as "another satellite".
+COL_HOME = (255, 190, 40)
+COL_HOME_PING = (150, 110, 20)   #!< Dimmer: the expanding ring.
+
 # --- Space stations ---------------------------------------------------------
-# Crewed stations are drawn as a labelled cross rather than a dot. NORAD ids:
-#   25544 -> ISS (ZARYA)      41.x deg-inclined ~420 km
+# Crewed stations are drawn as a labelled satellite (body + solar panels) rather than
+# a dot. NORAD ids:
+#   25544 -> ISS (ZARYA)      51.6 deg-inclined ~420 km
 #   48274 -> CSS (TIANHE)     Tiangong core module
 STATION_LABELS = {25544: "ISS", 48274: "CSS"}
 STATION_COLORS = {25544: COL_ISS, 48274: COL_CSS}
-STATION_CROSS_ARM = 3            #!< Half-length of a station cross arm (logical px).
+
+# --- Your location ----------------------------------------------------------
+# Marked on the globe with a dot that pings - an expanding ring - whenever the Earth's
+# rotation brings it onto the visible hemisphere. Set HOME_ENABLED to False to turn it
+# off. South and west are NEGATIVE. Defaults to Brisbane, Australia.
+HOME_ENABLED = True
+HOME_LAT = -27.4698              #!< Degrees north; negative for south.
+HOME_LON = 153.0251              #!< Degrees east; negative for west.
+HOME_PING_PERIOD_S = 2.5         #!< Seconds for one full expanding ring.
+
+# --- Clock ------------------------------------------------------------------
+# The big local date/time above the globe. This always reads REAL wall-clock time in
+# your machine's local timezone, even when TIME_ACCELERATION runs the orbits fast -
+# a clock that lies is useless.
+CLOCK_ENABLED = True
+CLOCK_FONT_PX = 46               #!< Time readout height.
+DATE_FONT_PX = 18                #!< Date line height.
 
 # --- Object filter (limits what is shown; also cuts per-frame work) ----------
 # Any field left as None is ignored. Filtering runs once at load, so a tighter

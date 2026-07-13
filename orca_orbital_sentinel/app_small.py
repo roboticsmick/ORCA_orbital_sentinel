@@ -21,7 +21,8 @@ from . import config
 from . import filters
 from . import hardware
 from . import tle_source
-from .app import _propagate_all, _utc_now
+from .app import _propagate_all, _utc_now, home_ecef, local_clock_strings, \
+    ping_phase
 from .camera import Camera
 from .coastline import load_coastline_points
 from .propagate import EARTH_RADIUS_KM
@@ -53,6 +54,7 @@ def run_small(allow_network=True):
     renderer = SmallRenderer(config.SMALL_W, config.SMALL_H)
     sink = hardware.make_sink()
     clock = pygame.time.Clock()
+    home = home_ecef()
 
     sim_time = now
     azimuth = 0.0
@@ -73,9 +75,12 @@ def run_small(allow_network=True):
         camera.set_azimuth(azimuth)
 
         pts, station_rows, _bands = _propagate_all(objects, sim_time)
+        local_time, local_date = local_clock_strings()
         surface = renderer.render(
             camera, coast, pts, station_rows,
-            sim_time.strftime("%H:%M:%S"))
+            sim_time.strftime("%H:%M:%S"),
+            home_ecef=home, home_pulse=ping_phase(),
+            local_time=local_time, local_date=local_date)
         sink.show(surface)
 
     sink.close()

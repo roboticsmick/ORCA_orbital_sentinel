@@ -1,0 +1,16 @@
+# Wi-Fi credentials - copy secrets.h.example to secrets.h and fill it in.
+orbital_sentinel/secrets.h
+
+# Host preview harness build output.
+tools/preview/build/
+
+# Vendored third-party Arduino libraries.
+#
+# These are unmodified upstream clones (each with its own .git), so they are not
+# committed here: doing so would either add ~61 MB of someone else's code to this
+# repo, or leave broken "embedded repository" gitlinks. The README tells you how to
+# install them, pinned to the commits this firmware was built against.
+#
+# Only Seeed_GFX is actually required to build the firmware.
+Seeed_GFX/
+Seeed_Arduino_RoundDisplay/

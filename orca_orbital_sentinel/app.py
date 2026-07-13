@@ -24,7 +24,7 @@ from . import config
 from .camera import Camera
 from .coastline import load_coastline_points
 from . import filters
-from .propagate import propagate_ecef, EARTH_RADIUS_KM
+from .propagate import propagate_ecef, geodetic_to_ecef_unit, EARTH_RADIUS_KM
 from .render import Renderer
 from . import sentry
 from . import tle_source
@@ -33,6 +33,33 @@ from . import tle_source
 def _utc_now():
     """! @brief Current UTC as a timezone-naive datetime (SGP4 convention)."""
     return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+
+
+def home_ecef():
+    """! @brief The configured home location as an ECEF vector, or None.
+        @return numpy [x, y, z] in km at the Earth's surface, or None if disabled.
+    """
+    if not config.HOME_ENABLED:
+        return None
+    return geodetic_to_ecef_unit(config.HOME_LON, config.HOME_LAT) \
+        * EARTH_RADIUS_KM
+
+
+def local_clock_strings():
+    """! @brief Real wall-clock time and date in the machine's local timezone.
+        @return Tuple (time_str, date_str), e.g. ("15:32:47", "13 JUL 2026").
+    @details Deliberately NOT the simulated clock: TIME_ACCELERATION may be running
+             the orbits far ahead of real time, but the readout a person checks has
+             to be true.
+    """
+    now = _dt.datetime.now()
+    return now.strftime("%H:%M:%S"), now.strftime("%d %b %Y").upper()
+
+
+def ping_phase():
+    """! @brief Home-marker ping phase in [0, 1), driven by real elapsed time."""
+    period = max(0.1, config.HOME_PING_PERIOD_S)
+    return (_dt.datetime.now().timestamp() % period) / period
 
 
 def _classify_bands(alt_km):
@@ -106,13 +133,17 @@ def run(allow_network=True, fullscreen=False, screensaver=False):
     """
     ctx = build_context(allow_network)
 
-    lw = config.WINDOW_W // config.LOGICAL_SCALE
-    lh = config.WINDOW_H // config.LOGICAL_SCALE
+    # The renderer sizes itself: in fullscreen it takes the monitor's native
+    # resolution (rather than letterboxing a fixed 1000x640 surface, which would
+    # leave pure-black bars that do not match COL_BACKGROUND). So the camera has to
+    # be built from the size it actually chose, not from the config constants.
+    renderer = Renderer(fullscreen=fullscreen or screensaver)
+    lw, lh = renderer.lw, renderer.lh
     scale = config.GLOBE_RADIUS_FRAC * min(lw, lh) / EARTH_RADIUS_KM
 
-    renderer = Renderer(lw, lh, fullscreen=fullscreen or screensaver)
     camera = Camera(lw / 2.0, lh / 2.0, scale, config.VIEW_TILT_DEG)
     clock = pygame.time.Clock()
+    home = home_ecef()
 
     sim_time = _utc_now()
     azimuth = 0.0
@@ -146,15 +177,19 @@ def run(allow_network=True, fullscreen=False, screensaver=False):
             _px, _py, depth = camera.project_many(pts)
             visible = int(np.count_nonzero(depth >= 0.0))
 
+        local_time, local_date = local_clock_strings()
         hud = {
             "clock": sim_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "local_time": local_time,
+            "local_date": local_date,
             "tracked": len(ctx["objects"]),
             "visible": visible,
             "source": ctx["source"],
             "bands": bands,
         }
         renderer.draw_frame(camera, ctx["coast"], pts, station_rows,
-                            ctx["neo_rows"], hud)
+                            ctx["neo_rows"], hud,
+                            home_ecef=home, home_pulse=ping_phase())
 
     pygame.quit()
 
