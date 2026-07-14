@@ -10,10 +10,15 @@ and your own city pinging whenever the Earth's rotation brings it into view.
 
 ![Round display frames](../assets/round_display_frames.png)
 
+Or in the `cyberpunk` theme — hot pink continents, cyan readout, yellow home marker on
+deep navy (see [Themes](#themes)):
+
+![Round display frames, cyberpunk theme](../assets/round_display_frames_cyberpunk.png)
+
 Those are not mock-ups. They are real frames from the firmware's own renderer, compiled
 for a PC and dumped to PNG — same SGP4 positions, same projection, same palette, same
 16-bit colour quantisation, same round bezel mask. See
-[Preview it without hardware](#preview-it-without-hardware).
+[Simulate it live on your PC](#simulate-it-live-on-your-pc) — no hardware required.
 
 **On screen:** the local time (large, centred), the date, ISS and CSS as labelled
 satellites that hide when they pass behind the globe, and your location as an amber dot
@@ -39,8 +44,8 @@ For the desktop (Python) version, see the [main README](../README.md).
 4. [Install the library](#4-install-the-library)
 5. [Smoke-test the panel](#5-smoke-test-the-panel)
 6. [Configure and flash](#6-configure-and-flash)
-7. [Make it yours](#make-it-yours)
-8. [Preview it without hardware](#preview-it-without-hardware)
+7. [Make it yours](#make-it-yours) — [themes](#themes), [location](#your-location), [timezone](#your-timezone)
+8. [Simulate it live on your PC](#simulate-it-live-on-your-pc) — and [render stills](#render-preview-stills)
 9. [How it works](#how-it-works)
 10. [Verification](#verification)
 11. [Troubleshooting](#troubleshooting)
@@ -236,6 +241,32 @@ That `source=` line tells you where the orbital elements came from — see
 Everything is in [`config.h`](orbital_sentinel/config.h). The two you almost certainly
 want to change are at the top.
 
+### Themes
+
+Change one line in [`config.h`](orbital_sentinel/config.h) and re-flash:
+
+```c
+#define ORCA_THEME 0    // 0 = retro, 1 = cyberpunk
+```
+
+| Theme | Look | Continents | Clock / stations | Home | Background |
+| ----- | ---- | ---------- | ---------------- | ---- | ---------- |
+| `0` retro (default) | CRT phosphor | green `#00aa78` | pale blue `#dcf0ff` | amber `#ffbe28` | near-black `#040806` |
+| `1` cyberpunk | neon-noir | hot pink `#ff007a` | cyan `#34edf3` | yellow `#ffea00` | deep navy `#091833` |
+
+The selection is compile-time (`#if ORCA_THEME`), so the unused palette costs nothing:
+the two builds differ by 20 bytes of flash.
+
+You don't have to flash to compare them — the preview harness takes `--theme`:
+
+```bash
+python tools/preview/build_preview.py --theme cyberpunk
+```
+
+The far-side (occluded) tones in each theme are the same hues crushed toward the
+background rather than a different colour, so the sphere still reads as a sphere: depth
+comes from value, not hue. Keep that property if you add your own theme.
+
 ### Your location
 
 **South and west are negative.** Get the numbers from any maps app.
@@ -270,9 +301,10 @@ A POSIX TZ string. **The sign is inverted** from what you expect — UTC+10 is w
 | `HOME_PING_PERIOD_S` | `2.5f` | Seconds per ping. |
 | `GLOBE_RADIUS_FRAC` | `0.34f` | Earth radius as a fraction of the panel. |
 | `CLOCK_TEXT_SCALE` | `2` | Time readout size (2 → a clear 10×14 font). |
-| `COL_LED` | pale blue | The one colour shared by the clock, date, ISS and CSS. |
+| `ORCA_THEME` | `0` | Palette: `0` retro, `1` cyberpunk. See [Themes](#themes). |
+| `COL_LED` | per theme | The one colour shared by the clock, date, ISS and CSS. |
 | `COL_ISS` / `COL_CSS` | `COL_LED` | Override with distinct values to tell the two stations apart by colour rather than by label. |
-| `COL_HOME` | amber | Your location — deliberately not a station colour. |
+| `COL_HOME` | per theme | Your location — deliberately not a station colour. |
 | `TLE_REFRESH_S` | `6 h` | How often to refetch. **Do not lower without reason** — CelesTrak firewalls pollers. |
 
 > **The clock never lies.** The orbits run on *simulated* time; the clock runs on *real*
@@ -307,16 +339,74 @@ and paste the ISS (25544) and CSS (48274) lines into
 
 ---
 
-## Preview it without hardware
+## Simulate it live on your PC
 
-`tools/preview` compiles the firmware's **real** `render.cpp` and `sgp4.cpp` for your PC
-and writes PNGs of exactly what the panel would show. It is how every image on this page
-was made, and it means you can iterate on the look of the display with no XIAO plugged in.
+**You do not need a XIAO, a panel, or any hardware to watch this firmware run.**
+
+`simulate.py` compiles the firmware's **real** `render.cpp` and `sgp4.cpp` into a host
+binary that runs the same loop the `.ino` does — advancing simulated time, spinning the
+camera, propagating the stations with SGP4 — and streams finished RGB565 frames into a
+window at the panel's true 240×240. Same positions, same projection, same palette, same
+16-bit colour quantisation, same round bezel.
+
+Works on **Windows, macOS and Linux**.
+
+```bash
+cd ESP32S3_orbital_sentinel
+
+# Python 3.13+ (incl. 3.14): pygame has no wheel there, so use the maintained fork.
+pip install pygame-ce numpy ziglang
+# Python 3.12 or older:  pip install pygame numpy ziglang
+
+python tools/preview/simulate.py                            # live, animated
+python tools/preview/simulate.py --theme cyberpunk --scale 3
+python tools/preview/simulate.py --accel 90                 # fast-forward the orbits
+```
+
+**No virtualenv needed** — installing into your system Python is fine; a venv only keeps
+these packages from colliding with your other projects.
+
+**No compiler setup needed** either: `ziglang` is a complete C++ toolchain shipped as a
+pip wheel. The scripts use `$CXX`, `g++` or `clang++` if you have one, and fall back to
+`python -m ziglang c++` if you don't.
+
+What each tool needs:
+
+| Tool | Python packages | Writes |
+| ---- | --------------- | ------ |
+| `simulate.py` (live window) | `pygame`/`pygame-ce`, `numpy` | nothing — press `S` to save a frame |
+| `build_preview.py` (stills) | `pillow` | PNGs |
+
+Both also need a C++ compiler, which `ziglang` supplies if you have none.
+
+| Option | Meaning |
+| ------ | ------- |
+| `--theme` | `retro` (default) or `cyberpunk`. |
+| `--scale` | Integer upscale. `2` → a 480×480 window; `3` → 720×720. |
+| `--tz-offset` | Hours to add to UTC for the clock (Brisbane = `10`). |
+| `--accel` | Simulated seconds per real second. Defaults to `config.h`'s `TIME_ACCELERATION` (`1.0`, real time). Try `90` to actually *see* the stations move. |
+
+Keys: **`Esc`** or **`Q`** to quit, **`S`** to save a PNG of the current frame.
+
+> **At the default `--accel 1` the stations move at real orbital speed**, which is to say
+> they crawl — the ISS takes 93 minutes to go round. That is correct, not broken. Pass
+> `--accel 90` to watch a full orbit in about a minute.
+
+**The one honest gap:** the simulator has no Wi-Fi, so it propagates the element sets baked
+into `tle_fallback.h` rather than fetching fresh ones from CelesTrak. Station *phase* will
+drift from reality as those elements age. Everything else — geometry, projection, colours,
+timing, occlusion, the ping — is exactly what the panel does.
+
+## Render preview stills
+
+`build_preview.py` is the non-interactive sibling: same compiled firmware code, but it
+writes PNGs instead of opening a window. It is how every image on this page was made.
 
 ```bash
 pip install pillow
 python tools/preview/build_preview.py                       # one frame
 python tools/preview/build_preview.py --frames 8 --step 120 # a sequence
+python tools/preview/build_preview.py --theme cyberpunk     # neon-noir
 ```
 
 The default invocation writes `assets/round_display_preview.png` — one frame with both
@@ -334,6 +424,7 @@ compiler in a pip wheel, no toolchain setup required).
 
 | Option | Meaning |
 | ------ | ------- |
+| `--theme` | `retro` (default) or `cyberpunk`. Compiles the firmware's own `#if ORCA_THEME` branch, so it is the real palette, not an approximation. |
 | `--time` | ISO **UTC** instant of the first frame. |
 | `--frames` / `--step` | Frame count, and simulated seconds between frames. |
 | `--azimuth` | Camera spin, to reproduce a composition. Any value is a moment the panel really passes through. |
@@ -382,6 +473,20 @@ This mirrors the desktop app's core/renderer split: `sgp4.cpp` is
 ready-made local time/date strings) and draws pixels. Anything platform-shaped — reading
 the clock, applying the timezone — happens in the caller. That is what lets the firmware
 and the host preview each do it their own way and still produce identical images.
+
+The host-side tooling lives outside the sketch, so none of it can ever be compiled into
+the firmware:
+
+```text
+tools/
+|-- gen_coastline.py       bakes coastline.h from the desktop's Natural Earth data
+`-- preview/
+    |-- simulate.py        LIVE simulator: the panel, animated, in a window
+    |-- simulate_main.cpp  the firmware's loop(), streaming frames instead of SPI
+    |-- build_preview.py   still-frame renderer (writes PNGs)
+    |-- preview_main.cpp   one-shot frame generator
+    `-- host_util.h        shared host helpers (TLE lookup, calendar, binary stdout)
+```
 
 **Each frame** the firmware advances simulated time, propagates the two stations through
 SGP4 into Earth-fixed coordinates, spins the camera, projects everything orthographically

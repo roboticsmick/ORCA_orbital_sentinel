@@ -69,32 +69,60 @@
 /// Seconds for one full home-marker ping (expanding ring).
 #define HOME_PING_PERIOD_S 2.5f
 
-// --- Palette ----------------------------------------------------------------
+// --- Theme ------------------------------------------------------------------
+// 0 = RETRO      phosphor green on near-black. The original CRT look.
+// 1 = CYBERPUNK  hot pink and cyan on deep navy. Neon-noir.
+//
+// Compile-time, so the unused palette costs nothing in flash. (The host preview
+// harness takes --theme and passes -DORCA_THEME here, so you can compare the two
+// without reflashing.)
+#ifndef ORCA_THEME
+#define ORCA_THEME 0
+#endif
+
+#define THEME_RETRO 0
+#define THEME_CYBERPUNK 1
+
 // RGB565() converts 8-bit-per-channel to the panel's 16-bit format; the low bits are
 // dropped, which is why the preview harness quantises identically - what you see in
 // tools/preview is what the panel shows.
 #define RGB565(r, g, b) \
   ((uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)))
 
+#if ORCA_THEME == THEME_CYBERPUNK
+
+// Neon-noir. The "far side" tones are the same hues crushed towards the background,
+// so the sphere still reads as a sphere - depth comes from value, not from hue.
+#define COL_BACKGROUND RGB565(9, 24, 51)     //!< #091833 deep navy.
+#define COL_STAR       RGB565(70, 100, 150)  //!< Cool haze, sits behind the neon.
+#define COL_COAST      RGB565(255, 0, 122)   //!< #ff007a hot pink.
+#define COL_COAST_FAR  RGB565(92, 16, 62)    //!< Hot pink crushed toward the navy.
+#define COL_GRID       RGB565(60, 30, 75)    //!< Earth limb circle: faint violet.
+#define COL_LED        RGB565(52, 237, 243)  //!< #34edf3 cyan.
+#define COL_HOME       RGB565(255, 234, 0)   //!< #ffea00 yellow.
+#define COL_HOME_PING  RGB565(140, 128, 10)  //!< Yellow, dimmed for the ring.
+
+#else  // THEME_RETRO
+
 #define COL_BACKGROUND RGB565(4, 8, 6)
 #define COL_STAR       RGB565(40, 60, 55)
 #define COL_COAST      RGB565(0, 170, 120)   //!< Continents, near side.
 #define COL_COAST_FAR  RGB565(0, 55, 45)     //!< Continents, far hemisphere (dimmed).
 #define COL_GRID       RGB565(0, 40, 32)     //!< Earth limb circle.
+#define COL_LED        RGB565(220, 240, 255) //!< Pale blue.
+#define COL_HOME       RGB565(255, 190, 40)  //!< Amber.
+#define COL_HOME_PING  RGB565(150, 110, 20)  //!< Dimmer: the expanding ring.
 
-// One pale-blue "LED" shared by the clock, the date, and both stations, so the whole
+#endif  // ORCA_THEME
+
+// One "LED" colour shared by the clock, the date, and both stations, so the whole
 // readout reads as a single instrument. The stations are told apart by their labels,
 // not their colour. Give COL_ISS / COL_CSS distinct values if you would rather tell
 // them apart at a glance.
-#define COL_LED        RGB565(220, 240, 255) //!< The one pale blue.
 #define COL_CLOCK      COL_LED               //!< The big time readout.
 #define COL_DATE       COL_LED               //!< The date line.
 #define COL_ISS        COL_LED               //!< International Space Station.
 #define COL_CSS        COL_LED               //!< Tiangong / Chinese Space Station.
-
-// Your location: amber, so it never reads as "another satellite".
-#define COL_HOME       RGB565(255, 190, 40)
-#define COL_HOME_PING  RGB565(150, 110, 20)  //!< Dimmer: the expanding ring.
 
 // --- Tracked objects --------------------------------------------------------
 // SMALL_INCLUDE_IDS in config.py: the two crewed stations. Hundreds of on-device SGP4

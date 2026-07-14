@@ -30,7 +30,9 @@ import shutil
 import subprocess
 import sys
 
-from PIL import Image
+# Pillow is imported lazily, inside the functions that write PNGs. simulate.py reuses
+# this module's build helpers but renders to a window instead of a file, so it must not
+# be forced to install Pillow just to import us.
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKETCH = os.path.normpath(os.path.join(HERE, "..", "..", "orbital_sentinel"))
@@ -64,17 +66,31 @@ def find_compiler():
         return None
 
 
-def build():
-    """! @brief Compile the preview binary. @return Path to the executable."""
+THEMES = {"retro": 0, "cyberpunk": 1}
+
+
+def build(theme="retro"):
+    """! @brief Compile the preview binary for a theme.
+        @param theme "retro" or "cyberpunk".
+        @return Path to the executable.
+    @details The firmware selects its palette at compile time (#if ORCA_THEME), so the
+             theme is a -D define here rather than a runtime flag. Each theme gets its
+             own binary so switching back and forth does not force a rebuild.
+    """
     cxx = find_compiler()
     if cxx is None:
         sys.exit("No C++ compiler found. Install one, or: pip install ziglang")
 
     os.makedirs(BUILD, exist_ok=True)
-    exe = os.path.join(BUILD, "preview.exe" if os.name == "nt" else "preview")
-    cmd = cxx + ["-std=c++17", "-O2", "-w", "-I", SKETCH] + SOURCES + ["-o", exe]
+    suffix = ".exe" if os.name == "nt" else ""
+    exe = os.path.join(BUILD, "preview_{0}{1}".format(theme, suffix))
+    cmd = (cxx + ["-std=c++17", "-O2", "-w",
+                  "-DORCA_THEME={0}".format(THEMES[theme]),
+                  "-I", SKETCH, "-I", HERE]
+           + SOURCES + ["-o", exe])
 
-    print("compiling:", " ".join(os.path.basename(s) for s in SOURCES))
+    print("compiling ({0}):".format(theme),
+          " ".join(os.path.basename(s) for s in SOURCES))
     subprocess.run(cmd, check=True)
     return exe
 
@@ -98,15 +114,22 @@ def rgb565_to_rgb888(buf):
 
 def circular_alpha(img):
     """! @brief Punch out the invisible corners so the PNG reads as a round panel."""
+    from PIL import Image, ImageDraw
+
     img = img.convert("RGBA")
     mask = Image.new("L", img.size, 0)
-    from PIL import ImageDraw
     ImageDraw.Draw(mask).ellipse((0, 0, img.size[0] - 1, img.size[1] - 1), fill=255)
     img.putalpha(mask)
     return img
 
 
 def main():
+    try:
+        from PIL import Image
+    except ImportError:
+        sys.exit("This script writes PNGs and needs Pillow:  pip install pillow\n"
+                 "(For the live simulator, which needs no Pillow, run simulate.py.)")
+
     ap = argparse.ArgumentParser()
     # Defaults compose a frame with both stations and the home marker in view.
     ap.add_argument("--time", default="2026-07-13T05:32:47")
@@ -116,11 +139,13 @@ def main():
                     help="camera spin in degrees; any value is a real moment")
     ap.add_argument("--tz-offset", type=float, default=10.0,
                     help="hours to add to UTC for the on-screen clock (Brisbane=10)")
+    ap.add_argument("--theme", choices=sorted(THEMES), default="retro",
+                    help="palette: retro (phosphor green) or cyberpunk (neon-noir)")
     ap.add_argument("--scale", type=int, default=2)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    exe = build()
+    exe = build(args.theme)
     proc = subprocess.run(
         [exe, args.time, str(args.frames), str(args.step), str(args.azimuth),
          str(args.tz_offset)],

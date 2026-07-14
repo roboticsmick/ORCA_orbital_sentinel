@@ -1,4 +1,15 @@
 numpy>=1.24
-pygame>=2.5
 requests>=2.28
 sgp4>=2.22
+
+# pygame vs pygame-ce.
+#
+# Upstream pygame has no wheels for Python 3.13+ yet, and building it from source needs
+# SDL headers most people do not have - so `pip install pygame` simply fails there.
+# pygame-ce is the maintained community fork: it ships current wheels and is a drop-in
+# replacement (still `import pygame`).
+#
+# These environment markers pick the right one automatically, so this file just works on
+# any supported Python. Do not "simplify" them back to a bare `pygame`.
+pygame>=2.5; python_version < "3.13"
+pygame-ce>=2.5; python_version >= "3.13"

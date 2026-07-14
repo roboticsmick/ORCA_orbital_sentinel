@@ -9,6 +9,20 @@ clock. Built by [ORCA](https://github.com/roboticsmick).
 Orbital positions are real: TLEs from CelesTrak, propagated with SGP4, in whatever
 build you run - desktop or microcontroller.
 
+## Two themes
+
+`retro` (above) is phosphor green on near-black. `cyberpunk` is neon-noir - hot pink
+continents, a cyan readout, and a yellow home marker on deep navy:
+
+![Cyberpunk theme](assets/orbital_sentinel_cyberpunk.png)
+
+```bash
+ORCA_THEME=cyberpunk python run.py
+```
+
+Or set `THEME = "cyberpunk"` in `config.py`. Both builds ship both themes - see
+[Themes](#themes).
+
 ## Two builds
 
 | | [**Desktop**](#desktop-quick-start) (Python) | [**Round display**](ESP32S3_orbital_sentinel/README.md) (C++ firmware) |
@@ -28,7 +42,7 @@ attached:
 
 The globe spins; your location pings whenever the Earth's rotation brings it into view.
 Those are real frames from the firmware's own renderer - see
-[Preview it without hardware](ESP32S3_orbital_sentinel/README.md#preview-it-without-hardware).
+[Simulate it live on your PC](ESP32S3_orbital_sentinel/README.md#simulate-it-live-on-your-pc).
 
 ## Features
 
@@ -49,12 +63,26 @@ Those are real frames from the firmware's own renderer - see
 
 ## Desktop quick start
 
-Requirements: **Python 3.9+**, and a graphical session (X11, Wayland, Windows, or macOS).
+Requirements: **Python 3.9+**, and a graphical session. Runs on **Windows, macOS and
+Linux**.
+
+On Linux / macOS:
 
 ```bash
 git clone https://github.com/roboticsmick/ORCA_orbital_sentinel.git
 cd ORCA_orbital_sentinel
-python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
+```
+
+On Windows (PowerShell):
+
+```powershell
+git clone https://github.com/roboticsmick/ORCA_orbital_sentinel.git
+cd ORCA_orbital_sentinel
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python run.py
 ```
@@ -65,19 +93,76 @@ python run.py
 | `python run.py --fullscreen` | Fills the screen at its native resolution. |
 | `python run.py --screensaver` | Fullscreen; exits on any key or mouse movement. |
 | `python run_lcd.py` | Compact 240x240 panel mode (desktop preview). |
-| `ORCA_OFFLINE=1 python run.py` | No network: cache / fallback / synthesized demo. |
+| `python run.py --small` | Same thing, via the module flag. |
 
 Controls: `Space` pauses, `Esc` or `Q` quits.
 
+Environment overrides work on every platform. On Windows, `set` them first:
+
+| Variable | Effect | Windows | Linux / macOS |
+| -------- | ------ | ------- | ------------- |
+| `ORCA_THEME` | `retro` or `cyberpunk` | `set ORCA_THEME=cyberpunk` | `ORCA_THEME=cyberpunk python run.py` |
+| `ORCA_OFFLINE` | Skip the network entirely | `set ORCA_OFFLINE=1` | `ORCA_OFFLINE=1 python run.py` |
+| `ORCA_FULLSCREEN` | Same as `--fullscreen` | `set ORCA_FULLSCREEN=1` | `ORCA_FULLSCREEN=1 python run.py` |
+
 Python packages (see `requirements.txt`): `numpy`, `pygame`, `requests`, `sgp4`.
 
-> On Python 3.13+, if `pygame` fails to build, install the maintained fork instead:
-> `pip install pygame-ce` (a drop-in replacement - same `import pygame`).
+> **A venv is recommended but not required** - `pip install -r requirements.txt` into your
+> system Python works fine. The venv just keeps this project's packages from colliding
+> with anything else you have installed.
+>
+> **On Python 3.13+ (including 3.14)** `requirements.txt` automatically installs
+> `pygame-ce` instead of `pygame`, because upstream pygame has no wheel for those versions
+> and will not build. `pygame-ce` is the maintained fork and a drop-in replacement - the
+> code still says `import pygame`. You do not have to do anything; the environment markers
+> in `requirements.txt` handle it.
+
+## Simulate the round display on your PC
+
+You do not need a XIAO or a panel to see the firmware run. `simulate.py` compiles the
+**real** `render.cpp` and `sgp4.cpp` from the ESP32 build into a host binary that streams
+frames, and shows them in a window at the panel's true 240x240 - same SGP4 positions, same
+projection, same palette, same 16-bit colour quantisation, same round bezel.
+
+```bash
+cd ESP32S3_orbital_sentinel
+pip install ziglang                                  # a C++ compiler in a pip wheel
+python tools/preview/simulate.py                     # live, animated, in a window
+python tools/preview/simulate.py --theme cyberpunk --scale 3
+python tools/preview/simulate.py --accel 90          # fast-forward the orbits
+```
+
+Works on Windows, macOS and Linux. Press `S` to save a PNG of the current frame, `Esc` to
+quit. Full details in the
+[round-display README](ESP32S3_orbital_sentinel/README.md#simulate-it-live-on-your-pc).
 
 ## Make it yours
 
 Everything lives in `orca_orbital_sentinel/config.py`. The knobs you are most likely to
 touch:
+
+### Themes
+
+```bash
+ORCA_THEME=cyberpunk python run.py     # or set THEME = "cyberpunk" in config.py
+```
+
+| Theme | Look | Continents | Clock / stations | Home | Background |
+| ----- | ---- | ---------- | ---------------- | ---- | ---------- |
+| `retro` (default) | CRT phosphor | green `#00aa78` | pale blue `#dcf0ff` | amber `#ffbe28` | near-black `#040806` |
+| `cyberpunk` | neon-noir | hot pink `#ff007a` | cyan `#34edf3` | yellow `#ffea00` | deep navy `#091833` |
+
+In `cyberpunk`, generic satellites are neon green `#00ffb3` and the Sentry impact-risk
+panel is `#a700ff`.
+
+A theme is just a dict of colour names in `THEMES` at the top of `config.py`, so adding a
+third is a matter of copying one and changing the values - **no renderer code knows a
+theme exists**. The far-side (occluded) tones are the same hues crushed toward the
+background rather than a different colour, so the sphere still reads as a sphere: depth
+comes from value, not hue. Keep that property if you add your own.
+
+The [round-display firmware](ESP32S3_orbital_sentinel/README.md#themes) ships both themes
+too, as a compile-time switch.
 
 ### Your location
 
@@ -98,19 +183,44 @@ left. Set `CLOCK_ENABLED = False` to hide it.
 
 ### Everything else
 
-- `CELESTRAK_GROUP` - which satellites to track. Default `visual` (~150 bright,
-  well-spread objects; polite on bandwidth). Set to `active`, `starlink`, `gps-ops`,
-  etc. for a denser swarm.
-- `TIME_ACCELERATION` - simulated seconds per real second. Default `60` (one ISS orbit
-  every ~90 s). Set to `1` for real-time.
-- `SPIN_DEG_PER_SEC` - cosmetic camera spin rate (does not affect physics).
-- `GLOBE_RADIUS_FRAC`, `WINDOW_W/H`, `LOGICAL_SCALE` - size and pixel chunkiness. In
-  fullscreen the window size comes from the monitor instead, and `WINDOW_H` becomes the
-  reference height the HUD text is scaled from (so a 1080p screen renders the chrome at
-  ~1.7x).
-- `COL_*` - the palette. `COL_LED` is the one pale blue shared by the clock, the date,
-  and both stations; give `COL_ISS`/`COL_CSS` distinct values to tell the two apart by
-  colour instead of by label.
+Every setting lives in `orca_orbital_sentinel/config.py`. In full:
+
+| Setting | Default | What it does |
+| ------- | ------- | ------------ |
+| **Display** | | |
+| `WINDOW_W` / `WINDOW_H` | `1000` / `640` | Windowed size. In fullscreen the monitor decides instead, and `WINDOW_H` becomes the reference height the HUD text scales from (so 1080p renders the chrome at ~1.7x). |
+| `LOGICAL_SCALE` | `2` | Chunkiness. The scene is drawn at 1/N and upscaled. Raise to `3` if fullscreen feels heavy on a 4K screen. |
+| `GLOBE_RADIUS_FRAC` | `0.30` | Earth radius as a fraction of the smaller window dimension. |
+| `TARGET_FPS` | `30` | Frame cap. |
+| **Time** | | |
+| `TIME_ACCELERATION` | `60.0` | Simulated seconds per real second. `60` puts an ISS orbit at ~90 s; set `1` for real-time. Never affects the clock. |
+| `SPIN_DEG_PER_SEC` | `3.0` | Cosmetic camera spin. Never affects physics. |
+| `VIEW_TILT_DEG` | `18.0` | How far you look down onto the northern hemisphere. |
+| **Clock** | | |
+| `CLOCK_ENABLED` | `True` | The big local time/date above the globe. |
+| `CLOCK_FONT_PX` / `DATE_FONT_PX` | `46` / `18` | Readout sizes. |
+| **Your location** | | |
+| `HOME_ENABLED` | `True` | Draw the pinging home marker. |
+| `HOME_LAT` / `HOME_LON` | Brisbane | **South and west are negative.** |
+| `HOME_PING_PERIOD_S` | `2.5` | Seconds per expanding ring. |
+| **Theme** | | |
+| `THEME` | `"retro"` | `"retro"` or `"cyberpunk"`. See [Themes](#themes). Override with `ORCA_THEME`. |
+| `THEMES` | — | The palettes themselves. Copy one to add a third. |
+| **What to track** | | |
+| `CELESTRAK_GROUP` | `"visual"` | ~150 bright, well-spread objects; polite on bandwidth. Try `active`, `starlink`, `gps-ops` for a denser swarm. |
+| `STATION_LABELS` / `STATION_COLORS` | ISS, CSS | Objects drawn as labelled satellites rather than dots. |
+| `MAX_OBJECTS` | `2000` | Hard cap; bounds per-frame work whatever group you pick. |
+| `FILTER_*` | `None` | See [Filtering](#filtering-limiting-what-is-shown). |
+| **Small-screen mode** | | |
+| `SMALL_W` / `SMALL_H` | `240` | Panel resolution for `run_lcd.py`. |
+| `SMALL_INCLUDE_IDS` | ISS + CSS | What the compact view shows. |
+| `SMALL_TIME_ACCELERATION` | `90.0` | A station orbit in ~60 s. |
+| **Network** | | |
+| `TLE_CACHE_TTL_S` | `3 h` | **Do not lower without reason** — CelesTrak firewalls pollers. |
+| `SENTRY_CACHE_TTL_S` | `24 h` | JPL Sentry cache. |
+
+`COL_LED` is the one colour shared by the clock, the date, and both stations; give
+`COL_ISS`/`COL_CSS` distinct values to tell the two apart by colour instead of by label.
 
 ## Filtering (limiting what is shown)
 
