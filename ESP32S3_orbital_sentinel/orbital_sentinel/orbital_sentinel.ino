@@ -370,13 +370,16 @@ void setup() {
   delay(200);
   Serial.println("\nORCA Orbital Sentinel - round display build");
 
-  // Local timezone for the on-screen clock. Everything internal - SGP4, SNTP, the
-  // RTC - stays in UTC; TZ only affects what localtime_r() hands back for display.
-  setenv("TZ", TZ_POSIX, 1);
-  tzset();
+  // NOTE: the process timezone is deliberately left at UTC for the whole of boot,
+  // and TZ_POSIX is applied *after* syncTime() instead. Two things depend on that:
+  //   - configTime() inside syncTime() overwrites TZ from its own offset arguments
+  //     (it calls setenv("TZ") + tzset() internally), so anything set here is lost;
+  //   - the USE_RTC branch calls mktime() on UTC calendar fields, which is only a
+  //     UTC epoch while TZ is still UTC.
+  // Setting TZ here instead of below is what made the clock read UTC. See setup().
 
   tft.init();
-  tft.setRotation(0);
+  tft.setRotation(PANEL_ROTATION);
   tft.fillScreen(TFT_BLACK);
   tft.setSwapBytes(true);   // Our buffer is native-endian uint16_t RGB565.
 
@@ -413,6 +416,15 @@ void setup() {
   // freshness is a wall-clock comparison. Only if nothing set the clock do we fall
   // back to the element-set epoch, which needs the TLEs to already be parsed.
   syncTime();
+
+  // Local timezone for the on-screen clock, applied only now that syncTime() has
+  // finished: configTime() clobbers TZ with its own offsets, and the RTC path needs
+  // TZ to still be UTC while it runs. Everything internal - SGP4, the epoch maths,
+  // NVS cache freshness - works in UTC regardless; TZ only changes what localtime_r()
+  // hands back for display.
+  setenv("TZ", TZ_POSIX, 1);
+  tzset();
+
   const char *src = loadTles();
   fallbackClockFromTle();
 

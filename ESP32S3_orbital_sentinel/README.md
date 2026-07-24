@@ -99,6 +99,32 @@ Board settings that matter:
 | Partition Scheme | Default 4 MB with spiffs | |
 | Upload Speed | 921600 | |
 
+### Linux: serial port permissions
+
+On a fresh Linux install the board enumerates as `/dev/ttyACM0` but is owned by the
+`dialout` group, so the IDE cannot open it and **Tools → Port** stays empty or the upload
+fails with a permission error. Add yourself to the group once:
+
+```bash
+ls -l /dev/ttyACM*                  # confirm the device appears when you plug it in
+sudo usermod -aG dialout "$USER"
+```
+
+Then **log out and back in** (or `newgrp dialout` for the current shell) — group
+membership is only picked up at login. On Arch and some other distros the group is `uucp`
+instead; `ls -l` on the device node tells you which.
+
+If you installed the IDE as a **Flatpak or Snap**, serial access is sandboxed and this fix
+may not be enough. The `.AppImage` or `.zip` build from arduino.cc is the path of least
+resistance.
+
+If `ModemManager` is running (default on Ubuntu/Fedora), it sometimes grabs the port for a
+few seconds at plug-in and the first upload attempt fails. Just retry, or mask it:
+
+```bash
+sudo systemctl mask ModemManager.service
+```
+
 ## 4. Install the library
 
 This firmware needs **exactly one** library: **Seeed_GFX**. That's it. `WiFi`,
@@ -123,7 +149,9 @@ Clone it into your Arduino **libraries** folder:
 | Linux | `~/Arduino/libraries` |
 
 ```bash
-cd ~/Documents/Arduino/libraries          # Windows: cd %USERPROFILE%\Documents\Arduino\libraries
+cd ~/Arduino/libraries                    # Linux
+# macOS:   cd ~/Documents/Arduino/libraries
+# Windows: cd %USERPROFILE%\Documents\Arduino\libraries
 git clone https://github.com/Seeed-Studio/Seeed_GFX.git
 ```
 
@@ -296,6 +324,7 @@ A POSIX TZ string. **The sign is inverted** from what you expect — UTC+10 is w
 
 | Knob | Default | Meaning |
 | ---- | ------- | ------- |
+| `PANEL_ROTATION` | `3` | Mounting orientation, 90° per step. `0` as-shipped, `3` anticlockwise, `1` clockwise, `2` upside down. Free — the display controller does it. Previews always show `0`. |
 | `TIME_ACCELERATION` | `1.0f` | Simulated seconds per real second. **1.0 = real time**, so the globe agrees with the clock. Raise it (the desktop uses 90) for a fast screensaver orbit — see the note below. |
 | `SPIN_DEG_PER_SEC` | `3.0f` | Cosmetic camera spin: one full turn every 2 minutes. Never affects physics. |
 | `HOME_PING_PERIOD_S` | `2.5f` | Seconds per ping. |
@@ -363,8 +392,23 @@ python tools/preview/simulate.py --theme cyberpunk --scale 3
 python tools/preview/simulate.py --accel 90                 # fast-forward the orbits
 ```
 
-**No virtualenv needed** — installing into your system Python is fine; a venv only keeps
-these packages from colliding with your other projects.
+**On Windows and macOS, no virtualenv needed** — installing into your system Python is
+fine; a venv only keeps these packages from colliding with your other projects.
+
+**On Linux, use a venv.** Recent distros (Ubuntu 23.04+, Debian 12+, Fedora 38+) mark the
+system Python as externally managed, so a system-wide `pip install` is refused outright
+with `error: externally-managed-environment` (PEP 668). Also note `python` often isn't on
+`PATH` — it's `python3`:
+
+```bash
+cd ESP32S3_orbital_sentinel
+python3 -m venv .venv && source .venv/bin/activate
+pip install pygame-ce numpy ziglang
+python tools/preview/simulate.py
+```
+
+Reactivate with `source .venv/bin/activate` in each new shell. (`pip install --user` also
+works, and `--break-system-packages` exists but does what it says — prefer the venv.)
 
 **No compiler setup needed** either: `ziglang` is a complete C++ toolchain shipped as a
 pip wheel. The scripts use `$CXX`, `g++` or `clang++` if you have one, and fall back to
@@ -408,6 +452,20 @@ python tools/preview/build_preview.py                       # one frame
 python tools/preview/build_preview.py --frames 8 --step 120 # a sequence
 python tools/preview/build_preview.py --theme cyberpunk     # neon-noir
 ```
+
+On Linux, run it from the `ESP32S3_orbital_sentinel/` directory, and note that `python`
+often isn't on `PATH` — use `python3`. Recent distros also refuse a system-wide `pip
+install` with `error: externally-managed-environment` (PEP 668). A venv is the clean fix:
+
+```bash
+cd ESP32S3_orbital_sentinel
+python3 -m venv .venv && source .venv/bin/activate
+pip install pillow
+python tools/preview/build_preview.py
+```
+
+Or install Pillow from your package manager instead (`sudo apt install python3-pil`,
+`sudo dnf install python3-pillow`) and skip the venv.
 
 The default invocation writes `assets/round_display_preview.png` — one frame with both
 stations up and the home marker mid-ping:
@@ -576,6 +634,8 @@ architecture.
 | ------- | ----- |
 | **Blank screen after a successful upload** | The display switch is OFF. This is nearly always it. |
 | **Board doesn't appear under Tools → Port** | Charge-only USB cable, or the board needs to be put in bootloader mode: hold **BOOT**, tap **RESET**, release **BOOT**. |
+| **Linux: port is missing, or upload fails with a permission error** | You're not in the `dialout` group — see [Linux: serial port permissions](#linux-serial-port-permissions). If `ls -l /dev/ttyACM*` shows nothing at all, it's the cable or bootloader mode, not permissions. |
+| **Linux: `error: externally-managed-environment` from pip** | PEP 668. Use a venv or your distro's `python3-pil` package — see [Render preview stills](#render-preview-stills). |
 | **`fatal error: TFT_eSPI.h: No such file`** | Seeed_GFX isn't installed, or is nested one folder too deep. `TFT_eSPI.h` must sit directly inside `…/Arduino/libraries/Seeed_GFX/`. |
 | **Duplicate-definition / "multiple libraries found for TFT_eSPI.h"** | The original `TFT_eSPI` is installed alongside Seeed_GFX. Delete or rename it. |
 | **Compiles, but the screen shows garbage or wrong colours** | `driver.h` is missing from the sketch folder, so the panel wasn't selected. It must contain `#define BOARD_SCREEN_COMBO 501`. |

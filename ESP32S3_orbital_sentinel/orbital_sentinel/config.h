@@ -26,6 +26,20 @@
 #define PANEL_H 240              //!< Panel height in pixels.
 #define PANEL_RADIUS 120         //!< Visible disc radius (px). Corners are masked.
 
+// Which way up the panel is mounted. Each step is 90 degrees:
+//   0 = as-shipped (USB-C to the right)   2 = upside down
+//   3 = 90 degrees anticlockwise          1 = 90 degrees clockwise
+// This is a display-controller setting, so it rotates the whole image and costs
+// nothing per frame. The panel is square and the bezel mask is symmetric, so no
+// layout changes with it - only which edge the USB-C connector ends up on.
+//
+// 3 is confirmed anticlockwise on real hardware. If you want the other direction,
+// 1 is its opposite.
+//
+// The host preview harness ignores this: it dumps the framebuffer before the panel
+// applies the rotation, so previews always look like PANEL_ROTATION 0.
+#define PANEL_ROTATION 3
+
 #define TARGET_FPS 30            //!< Frame-rate cap.
 
 // --- Your location ----------------------------------------------------------
@@ -77,7 +91,7 @@
 // harness takes --theme and passes -DORCA_THEME here, so you can compare the two
 // without reflashing.)
 #ifndef ORCA_THEME
-#define ORCA_THEME 0
+#define ORCA_THEME 1
 #endif
 
 #define THEME_RETRO 0
